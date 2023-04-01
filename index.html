@@ -11,11 +11,14 @@
         <p class="author">Yao Xu, Michael Xu</p>
         <p class="date">March 2023</p>
 
-        <img src="overview.png" alt="img: overview" width="400">
+        <div id="figure1">
+            <img src="overview.png" alt="img: overview" width="600">
+        </div>
 
         <section class="section">
             <h2>URL</h2>
-            <a href="https://michaelxuuu.github.io/hybirdFlow/">https://michaelxuuu.github.io/hybirdFlow/</a>
+            <a href="https://michaelxuuu.github.io/CMU-1561-Final-Project/">https://michaelxuuu.github.io/CMU-1561-Final-Project/</a><br>
+            <a href="https://github.com/michaelxuuu/CMU-1561-Final-Project.git">Code</a>
         </section>
 
         <section class="section">
@@ -25,31 +28,34 @@
         
         <section class="section">
             <h2>Background</h2>
-            <p>Multithreading benefited from lower resource consumption and the shared memory model has become the go-to way to concurrent programming; while pthreads are being widely used to implement multithreading and build concurrent applications, efficient use of pthreads has always been a challenging task.</p>
+            <p>Concurrent programming is increasingly necessary due to the rise of multi-core processors, high-performance computing requirements, scalability needs, user expectations for responsiveness, and cost efficiency considerations. Multithreading has become the go-to approach for concurrent programming due to its lower resource consumption and the exploitation of the shared memory model. While POSIX threads are widely used for multithreading implementations, as they are efficient, scalable, reliable, and available on many operating systems, using them to achieve efficient concurrency remains a challenge. </p>
             
-            <p>One challenge would be when theconcurrent tasks are many, which can potentially cause significant scheduling overhead, overwhelming the hardware resources. The thread pool technique has long been used to deal with this issue by abstracting each concurrent task into a unit of work and adding it into a shared work queue, from which worker threads in the pool will grab one work and then the next and keep doing going until the queue is empty.</p>
+            <p>One challenge arises when the number of concurrent operations increases, potentially causing significant scheduling overhead and overwhelming hardware resources. The thread pool technique has long been used to address this issue, where it abstracts each concurrent task into a unit of work and adds it to a shared work queue. From this queue, threads in the pool grab one unit of work and finish executing it, then proceed to the next until the queue is empty.</p>
 
-            <p>The thread pool can be a neat solution to deal with a huge quantity of tasks while keeping a bounded scheduling overhead, and yet, it is still insufficient when the running spans of each concurrent task are highly variable, and the responsiveness is added as a requirement, namely, when we want to achieve user-level Multitasking. The thread pool may not be a wise solution since with long-running/persistent tasks those tasks far down in the queue can never be executed since the subsequent tasks are never executed until all of the preceding tasks have been completed. If we were still to use pthreads directly, we would end up spawning hundreds of threads, one for each task, creating tremendous overhead, and hurting the performance.</p>
+            <p>The thread pool can be a neat solution to deal with a huge quantity of tasks while keeping the scheduling overhead bounded. However, it may be insufficient when the running spans of each concurrent task are highly variable. This is especially true when using user-level multitasking, where we can have long-running or persistent tasks. The thread pool may not be a wise solution here, as those tasks that runs much longer than other can cause drastic delay to those far down in the queue, which, in the worst case, may never be executed becasue subsequent tasks are not executed until all preceding tasks have been completed. If we were still to use pthreads naviely, we would end up spawning hundreds of threads again, one for each task, creating immense overhead and hurting performance.</p>
             
-            <p>Hence, to achieve efficient user-level multitasking, we must come up with a clever design and so to use pthreads as efficiently as we can. What we can do is create another layer of abstraction - user-level threads - above threads, which are essentially contexts of each function that used to be mapped to one dedicated pthread to execute, and schedule them to dynamically decide which one to be run by which pthread, whereby the scheduling overhead is kept low compared to scheduling pthreads and the thread pool model is preserved to maintain full use of the hardware resources.</p>
+            <p>Clearly, the thread pool model should not be preserved. But how to break the exeuction of long-running blocking tasks without compromising correctness to allow other tasks to run has become the main question. To answer that question, we must introduce the idea of user-level threads, where we turn each unit of work in the work queue (remeber that we are still sticking to the thread pool model) into an execution context, keeping track of the full state of each concurrently running task, and instead of mapping one task to one dedicated POXIS thread, we dynamically decide which POSIX thread in the pool should exeucte which task, so that we can safely break the exeuction of one task, saving its context back to the shared queue, and start the execution of the next user-level thread, loading the corresponding context from the queue. This process is depicted in the <a href="#figure1">figure</a> at the beginning.</p>
+
+            <p>Many programming languages have incorporated support for user-level threads, and we believe it is worth the effort to reinvent the wheel in order to better understand important concepts discussed in lectures, such as lock implementations, work stealing, and lock-free programming. Therefore, we have decided to implement our own user-level thread library.</p>
         </section>
         
         <section class="section">
             <h2>The challenge</h2>
-            <p>There are several challenging parts in this project. The first part is about how to implement task creation and management. We need to dynamically maintain the context including registers and stack of each task in some data structures and achieve the correct context switching. In some work load, there might be a large amount of tasks which means we have to implement efficient scheduler, scheduling algorithm and context switching process.</p>
-            <p>The second challenge is to achieve synchronization among tasks. Mechanisms such as locks, semaphores, and condition variables will be used to achieve efficient synchronization.</p>
+            <p>There are several challenging parts in this project. The first and also the most important one is how to implement user-level threads correctly - what are considered as part of the context of a task, how to assign memory to each task, and how to schedule tasks in a preemptive manner.
+            <p>Work stealing can also be tricky to implement efficiently. There are so many design choices that go into this, such as from whom should each worker thread steal, and should the queues be implemented lock-free or not, etc.</p>
+            <p>The implementation of locks can also be challenging since there are many ways to implement locks, and deciding which one is best for our circumstance is crucial.</p>
             <p>Another challenging part is to implement resource management such as memory to avoid resource leaking.</p>
         </section>
 
         <section class="section">
             <h2>Goals & Deliverables</h2>
-            <p>We hope to achieve a fully functional user-level thread library that's comparable to pthread library, and work stealing is a must in our implementation. The extra goals are many, which include our lock implementation, and lock-free work queues for each pthread. For the demo, we plan to benchmark both pthread library and our library and compare the result performances. If we can implement our own locks and lock-free work queues, we can also benchmark each version and demonstrate how performance varies with different implementations.</p>
+            <p>We aim to develop a user-level thread library that is fully functional and almost able to be identically used as the Pthread library, with a focus on implementing work stealing. Additionally, we have set several goals that we hope to achieve, such as creating our lock implementation and implementing lock-free work queues. For the demo, our plan is to benchmark both the pthread library and our library and compare their performance results. If we successfully implement our own locks and lock-free work queues, we can further benchmark each implementations to scrutinize the performance variation.</p>
         </section>
 
 
         <section class="section">
             <h2>Platform</h2>
-            <p>Desired platform for develop and performance analyzing is GHC machine or PSC machine with 16 or more cores.</p>
+            <p>Any machine with a POSIX-compliant OS and a multi-core x86-64 processor.</p>
         </section>
 
         <section class="section">
@@ -61,7 +67,7 @@
                 </tr>
                 <tr>
                   <td>4/1/2023 - 4/6/2023</td>
-                  <td>Read material and decide API exposed to users</td>
+                  <td>Study related work thoroughly and decide API exposed to users</td>
                 </tr>
                 <tr>
                   <td>4/7/2023 - 4/14/2023</td>
@@ -73,7 +79,7 @@
                 </tr>
                 <tr>
                   <td>4/22/2023 - 4/28/2023</td>
-                  <td>Implement test cases and conduct performance analysis</td>
+                  <td>Write benchmark programs and conduct performance analysis</td>
                 </tr>
                 <tr>
                   <td>4/29/2023 - 5/3/2023</td>
