@@ -1,0 +1,47 @@
+/* Global styles */
+body {
+  font-family: "Baskerville", seif;
+  margin: 20px;
+}
+
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+img {
+  display: block;
+  margin: 20px auto;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Title and author styles */
+.title {
+  text-align: center;
+}
+
+.author, .date {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+/* Section styles */
+section {
+  margin-bottom: 40px;
+}
+
+section h2 {
+  margin-bottom: 10px;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th, td {
+  border: 1px solid black;
+  padding: 8px;
+  text-align: left;
+}
