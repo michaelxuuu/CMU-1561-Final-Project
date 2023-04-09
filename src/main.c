@@ -1,5 +1,5 @@
-#include <stdio.h>
 #include "uthread.h"
+#include <stdio.h>
 
 void *func(void *arg) {
     printf("asda\n");

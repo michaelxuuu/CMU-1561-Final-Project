@@ -1,3 +1,4 @@
+#include "x86_64.h"
 #include "uthread.h"
 
 #include <stdint.h>
@@ -8,7 +9,6 @@
 #include <stdio.h>
 #include <errno.h>
 #include <stdatomic.h>
-#include "x86_64.h"
 
 #define MAX_UTHREAD_COUNT 128
 #define UTHREAD_ALIGNEMNT 16
