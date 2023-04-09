@@ -1,0 +1,13 @@
+{
+    "files.associations": {
+        "ucontext.h": "c",
+        "_ucontext.h": "c",
+        "_mcontext.h": "c",
+        "stdlib.h": "c",
+        "uthread.h": "c",
+        "compare": "c",
+        "stdint.h": "c",
+        "locale": "c",
+        "string": "c"
+    }
+}
