@@ -8,6 +8,8 @@
         "compare": "c",
         "stdint.h": "c",
         "locale": "c",
-        "string": "c"
+        "string": "c",
+        "errno.h": "c",
+        "pthread.h": "c"
     }
 }
