@@ -17,7 +17,7 @@ void *func2(void *arg) {
     return 0;
 }
 
-int main() {
+int main(void) {
     uthread_create(func1, 0);
     uthread_create(func2, 0);
     for(;;) {

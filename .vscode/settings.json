@@ -22,6 +22,10 @@
         "chrono": "c",
         "unordered_map": "c",
         "algorithm": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "deque": "cpp",
+        "iterator": "cpp",
+        "list": "cpp",
+        "stdatomic.h": "c"
     }
 }

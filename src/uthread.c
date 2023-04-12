@@ -1,4 +1,4 @@
-#include "x86_64.h"
+#include "ucon.h"
 #include "uthread.h"
 
 #include <stdio.h>
@@ -18,15 +18,6 @@ enum {
     USTATE_RUNNING,
     USTATE_SLEEPING,
     USTATE_ZOMBIE
-};
-
-// uthread context
-struct uthread_context {
-    uint32_t id;
-    uint32_t state;
-    ucontext_t uc;
-    struct uthread_context *prev;
-    struct uthread_context *next;
 };
 
 // a circular queue of uthread contexts
@@ -81,27 +72,23 @@ void sigalarm_handler(int signum) {
         pthread_kill(runtime.workers[i].pthread_id, SIGUSR1);
 }
 
-int stat[20] = {0};
-
 // uthread schedualer (installed as the SIGUSR1 handler)
 void scheduler(int signum, siginfo_t *si, void *context) {
-    ucontext_t *ucon = (ucontext_t *)context;
-    ucon = (ucontext_t *)context;
-    ucon = (ucontext_t *)context;
-    ucon = (ucontext_t *)context;
+    ucontext_t *uc = (ucontext_t *)context;
+    uc = (ucontext_t *)context;
     struct worker *w = &runtime.workers[get_myid()];
 
     // save the context of the running uthread
     if (w->cur) {
-        memcpy(&w->cur->uc, ucon, sizeof(ucontext_t));
-        memcpy(w->cur->uc.uc_mcontext, ucon->uc_mcontext, sizeof(_STRUCT_MCONTEXT64));
+        memcpy(&w->cur->uc, uc, sizeof(ucontext_t));
+        memcpy(w->cur->uc.uc_mcontext, uc->uc_mcontext, sizeof(_STRUCT_MCONTEXT64));
         w->cur = w->cur->next;
     } else w->cur = w->queue.head;
 
     // load the context of the next uthread
     // queue's never empty guaranteed by introcuding the dummy node
-    memcpy(ucon, &w->cur->uc, sizeof(ucontext_t));
-    memcpy(ucon->uc_mcontext, w->cur->uc.uc_mcontext, sizeof(_STRUCT_MCONTEXT64));
+    memcpy(uc, &w->cur->uc, sizeof(ucontext_t));
+    memcpy(uc->uc_mcontext, w->cur->uc.uc_mcontext, sizeof(_STRUCT_MCONTEXT64));
 }
 
 // initailze a worker (used on creation)
@@ -271,4 +258,5 @@ uint32_t uthread_create(void *(*func)(void *), void *arg) {
 
     /**** test ****/
     // pthread_kill(runtime.workers[0].pthread_id, SIGUSR1);
+    return ucon->id;
 }
