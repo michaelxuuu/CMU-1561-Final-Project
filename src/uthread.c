@@ -1,117 +1,239 @@
 #include "x86_64.h"
 #include "uthread.h"
 
+#include <stdio.h>
 #include <stdint.h>
 #include <signal.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
 #include <pthread.h>
-#include <stdio.h>
-#include <errno.h>
+#include <sys/time.h>
 #include <stdatomic.h>
 
 #define MAX_UTHREAD_COUNT 128
-#define UTHREAD_ALIGNEMNT 16
 #define UTHREAD_STACK_SIZE (sizeof(char) * 1024 * 1024 * 8)
 
 enum {
-    UTHREAD_STATE_RUNNING,
-    UTHREAD_STATE_SLEEPING,
-    UTHREAD_STATE_ZOMBIE,
+    USTATE_RUNNING,
+    USTATE_SLEEPING,
+    USTATE_ZOMBIE
 };
 
 // uthread context
-struct uthread {
+struct uthread_context {
     uint32_t id;
     uint32_t state;
     ucontext_t uc;
+    struct uthread_context *prev;
+    struct uthread_context *next;
 };
 
-// uthread queue node
-struct node {
-    struct node *prev;
-    struct node *next;
-    struct uthread uthd;
-};
-
-struct worker_id {
-    pthread_t id1;
-    uint32_t id2;
+// a circular queue of uthread contexts
+struct uqueue {
+    uint32_t size;
+    struct uthread_context *head;
 };
 
 // worker data
+static __thread uint32_t id_threadlocal; // integer worker id assigned and used by the run-time
+static __thread uint32_t next_id_threadlocal; // next worker to forward the signal to
 struct worker {
-    struct worker_id ids;
-    pthread_mutex_t mu;
-    struct node *queue;
-    uint32_t qsize;
-    uint32_t cur_pthread_id;
+    pthread_t pthread_id;           // pthread id
+    struct uqueue queue;            // work queue
+    struct uthread_context *cur;    // pointer to the current context in execution
 };
-
-// worker ids (thread local)
-static __thread struct worker_id worker_id;
 
 // run-time data
 static struct {
+    pthread_t master;
     uint32_t is_active;
-    struct worker *worker_pool;
-    uint32_t pool_size;
-    atomic_uint next_uthread_id;
-    atomic_uint next_worker_id;
-} runtime;
+    uint32_t worker_count;      // number of cores
+    struct worker *workers;     // a pool of worker
+    atomic_uint next_uid;       // id to hand to the next uthread created
+    atomic_uint next_worker;    // worker to give the next uthread to
+    atomic_uint sched_count;    // call count to scheduale() in the current scheduling round
+} runtime = {
+    .is_active = 0,
+    .worker_count = 0,
+    .workers = 0,
+    .next_uid = 0,
+    .next_worker = 0,
+    .sched_count = 0
+};
 
-// uthread schedualer (installed as the SIGALARM handler)
-static void scheduler(int signum, siginfo_t *si, void *context) {
-    ucontext_t *uc = (ucontext_t *) context;
-    uc = (ucontext_t *) context;
-    uc = (ucontext_t *) context;
-    mcontext_t mc = uc->uc_mcontext;
-    int a = worker_id.id2;
-    if (runtime.worker_pool[0].cur_pthread_id == 0) {
-        char *s1 = (char *)&runtime.worker_pool[0].queue[0].uthd.uc;
-        char *s2 = (char *)runtime.worker_pool[0].queue[0].uthd.uc.uc_mcontext;
-        for (int i = 0; i < sizeof(ucontext_t); i++)
-            ((char *)uc)[i] = s1[i];
-        for (int i = 0; i < sizeof(_STRUCT_MCONTEXT64); i++)
-            ((char *)mc)[i] = s2[i];
-        
-    }
+// helper functions
+// generate a new uthread id
+static inline uint32_t gen_uid() { return runtime.next_uid++; }
+// pick a worker from the pool to take on the next piece of work (uthread)
+static inline struct worker *pick_worker() { return &runtime.workers[(runtime.next_worker++ % runtime.worker_count)]; }
+
+// thread local storage access wrappers
+static inline uint32_t get_myid() { return id_threadlocal; }
+static inline uint32_t get_nextid() { return next_id_threadlocal; }
+static inline void set_myid(uint32_t myid) { id_threadlocal = myid; }
+static inline void set_nextid(uint32_t myid) { next_id_threadlocal = (myid == runtime.worker_count-1) ? 0 : myid + 1; }
+
+// exeucted by the main pthread
+// main pthread fowards SIGUSR1 to each of the worker pthreads
+void sigalarm_handler(int signum) {
+    for (int i = 0; i < runtime.worker_count; i++)
+        pthread_kill(runtime.workers[i].pthread_id, SIGUSR1);
+}
+
+int stat[20] = {0};
+
+// uthread schedualer (installed as the SIGUSR1 handler)
+void scheduler(int signum, siginfo_t *si, void *context) {
+    ucontext_t *ucon = (ucontext_t *)context;
+    ucon = (ucontext_t *)context;
+    ucon = (ucontext_t *)context;
+    ucon = (ucontext_t *)context;
+    struct worker *w = &runtime.workers[get_myid()];
+
+    // save the context of the running uthread
+    if (w->cur) {
+        memcpy(&w->cur->uc, ucon, sizeof(ucontext_t));
+        memcpy(w->cur->uc.uc_mcontext, ucon->uc_mcontext, sizeof(_STRUCT_MCONTEXT64));
+        w->cur = w->cur->next;
+    } else w->cur = w->queue.head;
+
+    // load the context of the next uthread
+    // queue's never empty guaranteed by introcuding the dummy node
+    memcpy(ucon, &w->cur->uc, sizeof(ucontext_t));
+    memcpy(ucon->uc_mcontext, w->cur->uc.uc_mcontext, sizeof(_STRUCT_MCONTEXT64));
 }
 
 // initailze a worker (used on creation)
-static void* worker_init(void *id) {
-    worker_id.id1 = pthread_self();
-    worker_id.id2 = *(uint32_t *)id;
-    struct sigaction sa;
-    sa.sa_sigaction = scheduler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_SIGINFO;
-    sigaction(SIGUSR1, &sa, NULL);
-    // busy waiting
-    for (;;);
+static void* worker_init(void *arg) {
+    uintptr_t id = (uintptr_t)arg;
+
+    // install thread-lcoal id
+    set_myid((uint32_t)id); // id is poassed by value
+    set_nextid((uint32_t)id);
+
+    // insatll signal handlers
+    struct sigaction sa_alrm;
+    struct sigaction sa_usr1;
+
+    memset(&sa_alrm, 0, sizeof(sa_alrm));
+    memset(&sa_usr1, 0, sizeof(sa_usr1));
+    
+    sa_alrm.sa_flags = SA_SIGINFO;
+    sa_alrm.sa_sigaction = scheduler;
+    sigaction(SIGUSR1, &sa_alrm, NULL);
+
+    sa_usr1.sa_handler = sigalarm_handler;
+    sigemptyset(&sa_usr1.sa_mask);
+    sigaction(SIGALRM, &sa_usr1, NULL);
+
+    // trigger scheduler maunally, if timer hasn't expired yet
+    // pthread_kill(runtime.workers[get_myid()].pthread_id, SIGUSR1);
+
+    // *** to be changed to using sigsuspend
+    sigset_t mask;
+    sigemptyset(&mask);
+    for(;;) {
+        sigsuspend(&mask);
+    } // do not exit (worker_init has no caller)
 }
 
 // initialize the run-time (invoked by the first call to uthread_create, used internally)
 static void runtime_init() {
+    runtime.master = pthread_self();
     runtime.is_active = 1;
-    runtime.next_uthread_id = 0;
+    runtime.next_uid = 0;
     // start as many cores as workers
-    runtime.pool_size = (uint32_t)sysconf(_SC_NPROCESSORS_ONLN);
-    runtime.worker_pool = malloc(sizeof(struct worker) * runtime.pool_size);
-    runtime.next_worker_id = 0;
+    runtime.worker_count = (uint32_t)sysconf(_SC_NPROCESSORS_ONLN);
+    runtime.workers = malloc(sizeof(struct worker) * runtime.worker_count);
+    runtime.next_worker = 0;
 
-    for (size_t i = 0; i < runtime.pool_size; i++) {
-        runtime.worker_pool[i].ids.id2 = i;
-        runtime.worker_pool[i].qsize = 0;
-        runtime.worker_pool[i].queue = 0;
-        pthread_mutex_init(&runtime.worker_pool[i].mu, 0);
-        pthread_create(&runtime.worker_pool[i].ids.id1, NULL, worker_init, &runtime.worker_pool[i].ids.id2);
+    for (size_t i = 0; i < runtime.worker_count; i++) {
+        struct worker *p = &runtime.workers[i];
+        p->queue.head = 0;
+        p->queue.size = 0;
+        // create dummy context for the worker to exeucte when idle
+        // so that it does not have to be blocked in signal handler
+        struct uthread_context *ucon = malloc(sizeof(struct uthread_context));
+        memset(ucon, 0, sizeof(struct uthread_context));
+        ucon->uc.uc_mcontext = malloc(sizeof(_STRUCT_MCONTEXT64));
+        memset(ucon->uc.uc_mcontext, 0, sizeof(_STRUCT_MCONTEXT64));
+        ucon->id = runtime.next_uid++;
+        struct worker *w = &runtime.workers[i];
+        struct uqueue *q = &w->queue;
+        q->head = ucon;
+        q->size = 1;
+        ucon->next = ucon;
+        ucon->prev = ucon;
+        w->cur = ucon;
+        // initailize the worker
+        pthread_create(&p->pthread_id, NULL, worker_init, (void *)i); // cast to (void *) to pass by value
     }
+
+    // set up timer
+    struct sigaction sa;
+    struct itimerval timer;
+
+    // Configure the timer signal handler
+    sa.sa_handler = sigalarm_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGALRM, &sa, NULL);
+
+    // Configure the timer to fire every 500ms
+    timer.it_value.tv_sec = 0;
+    timer.it_value.tv_usec = 500000;
+    timer.it_interval.tv_sec = 0;
+    timer.it_interval.tv_usec = 500000;
+
+    // Start the timer
+    setitimer(ITIMER_REAL, &timer, NULL);
+}
+
+sigset_t begin_critical(int signo) {
+    sigset_t oldmask, newmask;
+    sigemptyset(&newmask);
+    sigaddset(&newmask, signo);
+    pthread_sigmask(SIG_BLOCK, &newmask, &oldmask);
+    return oldmask;
+}
+
+void end_critical(sigset_t oldmask) {
+    pthread_sigmask(SIG_SETMASK, &oldmask, NULL);
 }
 
 // clean up the resource allcoated for the uthread
 static void cleanup() {
-    for (;;);
+    struct worker *w = &runtime.workers[get_myid()];
+    struct uqueue *q = &w->queue;
+    struct uthread_context *ucon = w->cur;
+
+    // mask signal
+    sigset_t oldmask = begin_critical(SIGUSR1);
+
+    // dummy guarantees that the queue's never empty 
+    ucon->prev->next = ucon->next;
+    ucon->next->prev = ucon->prev;
+    q->head = ucon->next;
+
+    ucon->next = ucon->prev = 0;
+    free(w->cur->uc.uc_mcontext);
+    free(w->cur);
+
+    w->cur = 0; // set it to NULL, schedualer won't save this context
+
+    end_critical(oldmask);
+    // unmask signal
+
+    // trigger scheduler maunally, if timer hasn't expired yet
+    // pthread_kill(runtime.workers[get_myid()].pthread_id, SIGUSR1);
+
+    // *** to be changed to using sigsuspend
+    sigset_t mask;
+    sigemptyset(&mask);
+    for(;;) {
+        sigsuspend(&mask);
+    } // do not exit (cleanup has no caller)
 }
 
 // allocate resources for a new thread and returns its id
@@ -120,37 +242,33 @@ uint32_t uthread_create(void *(*func)(void *), void *arg) {
     if (!runtime.is_active)
         runtime_init();
 
-    struct node *newnode = malloc(sizeof(struct node));
-    newnode->uthd.uc.uc_mcontext = malloc(sizeof(_STRUCT_MCONTEXT64));
+    struct uthread_context *ucon = malloc(sizeof(struct uthread_context));
+    memset(ucon, 0, sizeof(struct uthread_context));
+    ucon->uc.uc_mcontext = malloc(sizeof(_STRUCT_MCONTEXT64));
+    memset(ucon->uc.uc_mcontext, 0, sizeof(_STRUCT_MCONTEXT64));
     
-    mcontext_t mc = newnode->uthd.uc.uc_mcontext;
+    mcontext_t mc = ucon->uc.uc_mcontext;
     uint64_t *stack = (uint64_t *)((uint64_t)malloc(UTHREAD_STACK_SIZE) + UTHREAD_STACK_SIZE);
     *(--stack) = (uint64_t)cleanup;
     mc_set_rsp(mc, (uint64_t)(stack));
     mc_set_rdi(mc, (uint64_t)arg);
     mc_set_rip(mc, (uint64_t)func);
-    newnode->uthd.id = runtime.next_uthread_id++;
-    newnode->uthd.state = UTHREAD_STATE_SLEEPING;
+    ucon->id = runtime.next_uid++;
+    ucon->state = USTATE_SLEEPING;
 
-    // uint32_t worker_id = runtime.next_worker_id;
-    // struct worker *worker = &runtime.worker_pool[worker_id];
-    struct worker *worker = &runtime.worker_pool[0];
+    struct uqueue *q = &pick_worker()->queue;
 
-    pthread_mutex_lock(&worker->mu);
-    if (worker->qsize++ == 0) {
-        worker->queue = newnode;
-        newnode->next = newnode;
-        newnode->prev = newnode;
-    } else {
-        newnode->next = worker->queue;
-        newnode->prev = worker->queue->prev;
-        worker->queue->prev->next = newnode;
-        worker->queue->prev = newnode;
-        worker->queue = newnode;
-    }
-    pthread_mutex_unlock(&worker->mu);
+    // mask signal
+    sigset_t oldmask = begin_critical(SIGUSR1);
+    // dummy guarantees that the queue's at least having one element at any given time
+    ucon->next = q->head;
+    ucon->prev = q->head->prev;
+    q->head->prev->next = ucon;
+    q->head->prev = ucon;
+    q->head = ucon;
+    // unmask signal
+    end_critical(oldmask);
 
-    // test
-    asm("de:");
-    pthread_kill(runtime.worker_pool[0].ids.id1, SIGUSR1);
+    /**** test ****/
+    // pthread_kill(runtime.workers[0].pthread_id, SIGUSR1);
 }

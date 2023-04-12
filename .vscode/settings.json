@@ -11,6 +11,17 @@
         "string": "c",
         "errno.h": "c",
         "pthread.h": "c",
-        "x86_64.h": "c"
+        "x86_64.h": "c",
+        "random": "c",
+        "queue": "c",
+        "__threading_support": "c",
+        "__locale": "c",
+        "thread": "c",
+        "__bit_reference": "c",
+        "bitset": "c",
+        "chrono": "c",
+        "unordered_map": "c",
+        "algorithm": "c",
+        "string.h": "c"
     }
 }

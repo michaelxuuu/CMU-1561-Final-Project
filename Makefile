@@ -1,10 +1,9 @@
 DIR = src
 SRC = $(wildcard $(DIR)/*.c)
 APP = app
-MSG = 
 
 debug: $(APP)
-	sudo gdb -x .gdbinit $<
+	lldb $<
 
 run: $(APP)
 	./$<
