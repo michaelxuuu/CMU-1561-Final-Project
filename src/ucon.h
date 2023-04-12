@@ -14,4 +14,6 @@ struct uthread_context {
     struct uthread_context *next;
 };
 
+void ucon_insert(struct uthread_context *head, struct uthread_context *ucon);
+
 #endif

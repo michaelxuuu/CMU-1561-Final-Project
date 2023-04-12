@@ -1,27 +1,18 @@
-#include "uthread.h"
+
 #include <stdio.h>
 #include <unistd.h>
 #include <pthread.h>
+#include "ucon.h"
 
-void *func1(void *arg) {
-    for (;;) {
-        printf("func1\n");
-    }
-    return 0;
-}
-
-void *func2(void *arg) {
-    for (;;) {
-        printf("func2\n");
-    }
-    return 0;
-}
+struct uthread_context first_ucon;
+struct uthread_context *head = &first_ucon;
 
 int main(void) {
-    uthread_create(func1, 0);
-    uthread_create(func2, 0);
-    for(;;) {
-        // printf("main thread running\n");
-        sleep(1);
-    }
+    first_ucon.id = 0;
+    first_ucon.next = &first_ucon;
+    first_ucon.prev = &first_ucon;
+    struct uthread_context new;
+    new.id = 1;
+    ucon_insert(head, &new);
+    asm("de:");
 }
