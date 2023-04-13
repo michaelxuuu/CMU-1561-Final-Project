@@ -18,7 +18,7 @@ run: $(APP)
 	$(PREFIX)./$< $(SUFFIX)
 
 $(APP): $(SRC)
-	$(PREFIX)gcc $^ -o $@ -g $(SUFFIX)
+	$(PREFIX)gcc $^ -o $@ -g
 
 clean:
 	$(PREFIX)rm $(APP) $(OUT) $(SUFFIX)

@@ -2,18 +2,37 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
-// compare the value stored at addr with the expected value
-// if they equal, then write the update into the addr and return expected value
-// otherwise return the discrepant value at addr
-static inline uint64_t CAS(uint64_t addr, uint64_t expected, uint64_t update) {
-    asm (
-        "mov %rsi, %rax;"               // expected -> rax
-        "lock cmpxchgq %rdx, (%rdi);"
-    );
-}
+
+    // addr    -> rdi
+    // old_val -> rsi
+    // new_val -> rdx
+
+    /*
+        https://www.felixcloutier.com/x86/cmpxchg
+
+        TEMP := DEST
+        IF accumulator = TEMP
+            THEN
+                ZF := 1;
+                DEST := SRC;
+            ELSE
+                ZF := 0;
+                accumulator := TEMP;
+                DEST := TEMP;
+        FI;
+    */
+extern uint64_t CAS(uint64_t addr, uint64_t old_val, uint64_t new_val);
+
+__asm__ (
+    "_CAS:;"
+    "mov %rsi, %rax;"
+    "mov %rdx, %rsi;"
+    "lock cmpxchgq %rsi, (%rdi);"
+    "ret;"
+);
+
 
 void ucon_insert(struct uthread_context *head, struct uthread_context *ucon) {
-
     struct uthread_context *old_head;
     do {
         old_head = head->next;
