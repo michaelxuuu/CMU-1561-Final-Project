@@ -2,17 +2,37 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <stdlib.h>
 #include "ucon.h"
 
-struct uthread_context first_ucon;
-struct uthread_context *head = &first_ucon;
+struct uthread_context *head;
 
+atomic_uint id = 0;
+
+struct uthread_context *create() {
+    struct uthread_context *ucon = malloc(sizeof(struct uthread_context));
+    ucon->id = id++;
+    ucon->prev = ucon;
+    ucon->next = ucon;
+    return ucon;
+}
+
+void *func(void *arg) {
+    for (int i = 0; i < 100000; i++)
+        ucon_insert(head, create());
+}
+
+pthread_t t[100];
 int main(void) {
-    first_ucon.id = 0;
-    first_ucon.next = &first_ucon;
-    first_ucon.prev = &first_ucon;
-    struct uthread_context new;
-    new.id = 1;
-    ucon_insert(head, &new);
-    asm("de:");
+    head = create();
+    for (int i = 0; i < 10; i++) {
+        pthread_create(&t[i], 0, func, 0);
+    }
+    for (int i = 0; i < 10; i++) {
+        pthread_join(t[i], 0);
+    }
+    printf("%d\n", head->id);
+    for (struct uthread_context *p = head->next; p != head; p=p->next) {
+        printf("%d\n", p->id);
+    }
 }
