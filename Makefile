@@ -4,21 +4,28 @@ APP = app
 SUFFIX = 2>/dev/null || true
 PREFIX = -@
 OUT = out
+INIT = .lldbinit
+CC = gcc
+CCFLAGS = -g
 
 .PHONY: clean
 
 debug: $(APP)
-	$(PREFIX)lldb $< $(SUFFIX)
+	$(PREFIX)lldb -s $(INIT) $<
+
+gdb: $(APP)
+	$(PREFIX)sudo gdb -x .gdbinit $<
+
 
 test_lf_insert: $(APP)
-	$(PREFIX) ./$< > $(OUT) $(SUFFIX)
-	$(PREFIX)python test.py $(SUFFIX)
+	$(PREFIX) ./$< > $(OUT)
+	$(PREFIX)python test.py
 
 run: $(APP)
-	$(PREFIX)./$< $(SUFFIX)
+	$(PREFIX)./$<
 
 $(APP): $(SRC)
-	$(PREFIX)gcc $^ -o $@ -g
+	$(PREFIX)$(CC) $(CCFLAGS) $^ -o $@
 
 clean:
 	$(PREFIX)rm $(APP) $(OUT) $(SUFFIX)

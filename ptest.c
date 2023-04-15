@@ -1,9 +1,13 @@
 
-#include "uthread.h"
+#include <pthread.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 void *func1(void *) {
+    printf("");
+    char *a = malloc(100);
+    free(a);
     return (void *)100;
 }
 
@@ -12,15 +16,15 @@ void *func2(void *) {
 }
 
 int main(void) {
-    int s = 6;
-    uthread_t id[s];
+    int s = 100000;
+    pthread_t id[s];
     for (int i = 0; i < s; i++) {
-        uthread_create(&id[i], func1, 0);
+        pthread_create(&id[i], 0, func1, 0);
     }
-    printf("here");
+    printf("here\n");
     for (int i = 0; i < s; i++) {
         void *r;
-        if (!uthread_join(id[i], (void *)&r));
+        if (!pthread_join(id[i], (void *)&r));
             // printf("thread %d exited, value returned: %d\n", id[i], r);
     }
 

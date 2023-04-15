@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
-uint32_t uthread_create(void *(*func)(void *), void *arg);
+typedef uint64_t uthread_t;
+
+int uthread_create(uthread_t *id, void *(*func)(void *), void *arg);
+int uthread_join(uthread_t, void *ret);
 
 #endif
