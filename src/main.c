@@ -12,7 +12,7 @@ void *func2(void *) {
 }
 
 int main(void) {
-    int s = 6;
+    int s = 2;
     uthread_t id[s];
     for (int i = 0; i < s; i++) {
         uthread_create(&id[i], func1, 0);

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <signal.h>
+#include <sys/_types/_ucontext.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -194,12 +195,20 @@ static void* worker_init(void *arg) {
     // pthread_kill(runtime.workers[get_myid()].pthread_id, SIGUSR1);
     runtime.init_count++;
 
-    // *** to be changed to using sigsuspend
-    sigset_t mask;
-    sigemptyset(&mask);
-    for(;;) {
-        sigsuspend(&mask);
-    } // do not exit (worker_init has no caller)
+    struct worker *w = &runtime.workers[get_myid()];
+    struct uqueue *q = &w->queue;
+    struct uthread_context *cur = q->head->next;
+    while(cur != q->head) {
+        if (cur->state == USTATE_DEAD){
+            cur->prev->next = cur->next;
+            cur->next->prev = cur->prev;
+            free(cur);
+        }
+        if (cur->state == USTATE_ZOMBIE){
+            free(cur->uc.uc_mcontext);
+            free(cur->stack);
+        }
+    }
 }
 
 // initialize the run-time (invoked by the first call to uthread_create, used internally)
