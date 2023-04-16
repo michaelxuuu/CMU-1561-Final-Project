@@ -2,26 +2,30 @@
 #include "uthread.h"
 #include <stdio.h>
 #include <stdint.h>
+#include <unistd.h>
 
-void *func1(void *) {
+void *func1(void *none) {
+    // char *buf = "hello!\n";
+    // write(STDOUT_FILENO, buf, strlen(buf));
     return (void *)100;
 }
 
-void *func2(void *) {
+void *func2(void *none) {
     for (;;);
+    return 0;
 }
 
 int main(void) {
-    int s = 2;
+    int s = 500;
     uthread_t id[s];
     for (int i = 0; i < s; i++) {
         uthread_create(&id[i], func1, 0);
     }
-    printf("here");
+    printf("here\n");
     for (int i = 0; i < s; i++) {
         void *r;
-        if (!uthread_join(id[i], (void *)&r));
-            // printf("thread %d exited, value returned: %d\n", id[i], r);
+        if (!uthread_join(id[i], (void *)&r))
+            printf("thread %ld exited, value returned: %ld\n", id[i], (uintptr_t)r);
     }
 
 }

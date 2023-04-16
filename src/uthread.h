@@ -5,7 +5,7 @@
 
 typedef uint64_t uthread_t;
 
-int uthread_create(uthread_t *id, void *(*func)(void *), void *arg);
+void uthread_create(uthread_t *id, void *(*func)(void *), void *arg);
 int uthread_join(uthread_t, void *ret);
 
 #endif

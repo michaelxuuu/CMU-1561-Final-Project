@@ -5,17 +5,13 @@ SUFFIX = 2>/dev/null || true
 PREFIX = -@
 OUT = out
 INIT = .lldbinit
-CC = gcc
+CC = clang
 CCFLAGS = -g
 
 .PHONY: clean
 
-debug: $(APP)
-	$(PREFIX)lldb -s $(INIT) $<
-
 gdb: $(APP)
-	$(PREFIX)sudo gdb -x .gdbinit $<
-
+	$(PREFIX) gdb -x .gdbinit $<
 
 test_lf_insert: $(APP)
 	$(PREFIX) ./$< > $(OUT)
