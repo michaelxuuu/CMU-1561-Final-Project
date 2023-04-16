@@ -79,14 +79,14 @@ enum {
 };
 
 struct uthread {
-    uint32_t id;
-    uint32_t wokerid;
+    int id;
+    int wokerid;
 };
 
 // uthread context
 struct uthread_context {
-    uint32_t id;
-    uint32_t state;
+    int id;
+    int state;
     ucontext_t uc;
     void *stack;
     void *ret;
@@ -102,46 +102,41 @@ struct uqueue {
 };
 
 // worker data
-static __thread uint32_t id_threadlocal; // integer worker id assigned and used by the run-time
-static __thread uint32_t next_id_threadlocal; // next worker to forward the signal to
+static __thread int id_threadlocal; // integer worker id assigned and used by the run-time
 struct worker {
-    uint32_t id;
+    int id;
     pthread_t pthread_id;           // pthread id
     struct uqueue queue;            // work queue
     struct uthread_context *cur;    // pointer to the current context in execution
 };
 
+// thread local storage access wrappers
+static inline int get_myid() { return id_threadlocal; }
+static inline void set_myid(int myid) { id_threadlocal = myid; }
+
 // run-time data
 static struct {
     pthread_t master;
-    uint32_t is_active;
-    uint32_t worker_count;      // number of cores
+    int is_active;
+    int worker_count;      // number of cores
     struct worker *workers;     // a pool of worker
     atomic_uint next_uid;       // id to hand to the next uthread created
     atomic_uint next_worker;    // worker to give the next uthread to
-    atomic_uint sched_count;    // call count to scheduale() in the current scheduling round
-    atomic_uint init_count;
+    atomic_uint ready_count;
 } runtime = {
     .is_active = 0,
     .worker_count = 0,
     .workers = 0,
     .next_uid = 0,
     .next_worker = 0,
-    .sched_count = 0,
-    .init_count = 0
+    .ready_count = 0
 };
 
 // helper functions
 // generate a new uthread id
-static inline uint32_t gen_uid() { return runtime.next_uid++; }
+static inline int gen_uid() { return runtime.next_uid++; }
 // pick a worker from the pool to take on the next piece of work (uthread)
 static inline struct worker *pick_worker() { return &runtime.workers[(runtime.next_worker++ % runtime.worker_count)]; }
-
-// thread local storage access wrappers
-static inline uint32_t get_myid() { return id_threadlocal; }
-static inline uint32_t get_nextid() { return next_id_threadlocal; }
-static inline void set_myid(uint32_t myid) { id_threadlocal = myid; }
-static inline void set_nextid(uint32_t myid) { next_id_threadlocal = (myid == runtime.worker_count-1) ? 0 : myid + 1; }
 
 // in this handler, a worker thread will relay SIGARLM to the main thread
 // the main thread will broadcast SIGUSR1 to each worker threads to start their scheduler
@@ -155,7 +150,6 @@ void sigalrm_handler(int signum) {
     }
 }
 
-void *func1(void *);
 // uthread schedualer (installed as the SIGUSR1 handler)
 void scheduler(int signum, siginfo_t *si, void *context) {
     ucontext_t *uc = (ucontext_t *)context;
@@ -183,12 +177,9 @@ void scheduler(int signum, siginfo_t *si, void *context) {
 }
 
 // initailze a worker (used on creation)
-static void* worker_init(void *arg) {
-    uintptr_t id = (uintptr_t)arg;
-
+static void* worker_init(void *id) {
     // install thread-lcoal id
-    set_myid((uint32_t)id); // id is poassed by value
-    set_nextid((uint32_t)id);
+    set_myid((uintptr_t)id); // id is poassed by value
 
     // insatll signal handlers
     struct sigaction sa_alrm;
@@ -206,7 +197,7 @@ static void* worker_init(void *arg) {
     sigfillset(&sa_alrm.sa_mask);
     sigaction(SIGALRM, &sa_alrm, NULL);
 
-    runtime.init_count++;
+    runtime.ready_count++;
 
     struct worker *w = &runtime.workers[get_myid()];
     struct uqueue *q = &w->queue;
@@ -265,13 +256,14 @@ void runtime_init() {
     sigfillset(&sa.sa_mask);
     sigaction(SIGALRM, &sa, NULL);
 
+#define MS (1000)
     // Configure the timer to fire every 10ms 10000
     timer.it_value.tv_sec = 0;
-    timer.it_value.tv_usec = 1000 * 10;
+    timer.it_value.tv_usec = MS * 10;
     timer.it_interval.tv_sec = 0;
-    timer.it_interval.tv_usec = 1000 * 10;
+    timer.it_interval.tv_usec = MS * 10;
 
-    while (runtime.init_count != runtime.worker_count);
+    while (runtime.ready_count != runtime.worker_count);
     setitimer(ITIMER_REAL, &timer, NULL);
 }
 
@@ -301,9 +293,9 @@ void uthread_create(uthread_t *id, void *(*func)(void *), void *arg) {
     ucon->stack = reentrant_malloc(UTHREAD_STACK_SIZE);
     memset(ucon->stack, 0, UTHREAD_STACK_SIZE);
 
-    uint64_t *stack = ucon->stack;
-    stack = (uint64_t *)((uint64_t)stack + UTHREAD_STACK_SIZE);
-    *(--stack) = (uint64_t)cleanup;
+    void *stack = ucon->stack;
+    stack = (void *)((uintptr_t)stack + UTHREAD_STACK_SIZE);
+    *(uintptr_t *)(--stack) = (uintptr_t)cleanup;
 
 
     uint64_t cs, ss;

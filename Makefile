@@ -4,7 +4,7 @@ APP = app
 SUFFIX = 2>/dev/null || true
 PREFIX = -@
 OUT = out
-INIT = .lldbinit
+INIT = .gdbinit
 CC = clang
 CCFLAGS = -g
 
@@ -12,10 +12,6 @@ CCFLAGS = -g
 
 gdb: $(APP)
 	$(PREFIX) gdb -x .gdbinit $<
-
-test_lf_insert: $(APP)
-	$(PREFIX) ./$< > $(OUT)
-	$(PREFIX)python test.py
 
 run: $(APP)
 	$(PREFIX)./$<

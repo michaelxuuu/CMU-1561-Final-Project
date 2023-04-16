@@ -17,7 +17,7 @@ void *func2(void *none) {
 }
 
 int main(void) {
-    int s = 500000;
+    int s = 100;
     uthread_t id[s];
     for (int i = 0; i < s; i++) {
         uthread_create(&id[i], func1, 0);
@@ -28,7 +28,6 @@ int main(void) {
         if (!uthread_join(id[i], (void *)&r))
             printf("thread %ld exited, value returned: %ld\n", id[i], (uintptr_t)r);
     }
-    for (;;);
 }
 
 // struct {
