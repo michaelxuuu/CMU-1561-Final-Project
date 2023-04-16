@@ -5,9 +5,6 @@
 #include <stdlib.h>
 
 void *func1(void *) {
-    printf("");
-    char *a = malloc(100);
-    free(a);
     return (void *)100;
 }
 
@@ -16,16 +13,15 @@ void *func2(void *) {
 }
 
 int main(void) {
-    int s = 100000;
+    int s = 10000;
     pthread_t id[s];
     for (int i = 0; i < s; i++) {
         pthread_create(&id[i], 0, func1, 0);
     }
-    printf("here\n");
     for (int i = 0; i < s; i++) {
         void *r;
         if (!pthread_join(id[i], (void *)&r));
-            // printf("thread %d exited, value returned: %d\n", id[i], r);
+            printf("thread %ld exited, value returned: %ld\n", id[i], (long)r);
     }
 
 }

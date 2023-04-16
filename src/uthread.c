@@ -1,6 +1,6 @@
-#include "x86_64.h"
 #include "uthread.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <signal.h>
@@ -10,30 +10,72 @@
 #include <pthread.h>
 #include <sys/time.h>
 #include <stdatomic.h>
+#include <sys/ucontext.h>
 
 #define MAX_UTHREAD_COUNT 128
 #define UTHREAD_STACK_SIZE (sizeof(char) * 1024 * 1024 * 8)
 
-// pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
-// void *malloc(size_t size) {
-//     void *r;
-//     pthread_mutex_lock(&mu);
-//     r = malloc(size);
-//     pthread_mutex_unlock(&mu);
-//     return r;
-// }
+void Log(const char *s) {
+    write(STDOUT_FILENO, s, strlen(s));
+}
 
-// void free(void *p) {
-//     pthread_mutex_lock(&mu);
-//     free(p);
-//     pthread_mutex_unlock(&mu);
-// }
+extern uint64_t CAS(uint64_t addr, uint64_t old_val, uint64_t new_val);
+extern uint64_t DCAS(uint64_t addr, uint32_t old_val[2], uint32_t new_val[2]);
+
+__asm__ (
+    "CAS:;"
+    "mov %rsi, %rax;"
+    "mov %rdx, %rsi;"
+    "lock cmpxchgq %rsi, (%rdi);"
+    "ret;"
+);
+
+__asm__ (
+    "DCAS:;"
+    
+    "mov 4(%rsi), %eax;" // higher half - old_val[2]
+    "shl $32, %rax;"
+    "mov (%rsi), %ebx;" // lower half - old_val[1]
+    "or %rbx, %rax;"
+
+    "mov 4(%rdx), %esi;" // higher half - new_val[2]
+    "shl $32, %rsi;"
+    "mov (%rdx), %ebx;" // lower half - old_val[1]
+    "or %rbx, %rsi;"
+
+    "lock cmpxchgq %rsi, (%rdi);"
+    "ret;"
+);
+
+int mu = 0;
+
+void lock() {
+    while (CAS((uint64_t)&mu, 0, 1) != 0);
+}
+
+void unlock() {
+    mu = 0;
+}
+
+void *reentrant_malloc(size_t size) {
+    void *r;
+    lock();
+    r = malloc(size);
+    unlock();
+    return r;
+}
+
+void reentrant_free(void *p) {
+    lock();
+    free(p);
+    unlock();
+}
 
 enum {
     USTATE_RUNNING,
     USTATE_SLEEPING,
-    USTATE_ZOMBIE,
-    USTATE_DEAD
+    USTATE_JOINABLE,
+    USTATE_JOINED
 };
 
 struct uthread {
@@ -101,38 +143,9 @@ static inline uint32_t get_nextid() { return next_id_threadlocal; }
 static inline void set_myid(uint32_t myid) { id_threadlocal = myid; }
 static inline void set_nextid(uint32_t myid) { next_id_threadlocal = (myid == runtime.worker_count-1) ? 0 : myid + 1; }
 
-extern uint64_t CAS(uint64_t addr, uint64_t old_val, uint64_t new_val);
-extern uint64_t DCAS(uint64_t addr, uint32_t old_val[2], uint32_t new_val[2]);
-
-__asm__ (
-    "CAS:;"
-    "mov %rsi, %rax;"
-    "mov %rdx, %rsi;"
-    "lock cmpxchgq %rsi, (%rdi);"
-    "ret;"
-);
-
-__asm__ (
-    "DCAS:;"
-    
-    "mov 4(%rsi), %eax;" // higher half - old_val[2]
-    "shl $32, %rax;"
-    "mov (%rsi), %ebx;" // lower half - old_val[1]
-    "or %rbx, %rax;"
-
-    "mov 4(%rdx), %esi;" // higher half - new_val[2]
-    "shl $32, %rsi;"
-    "mov (%rdx), %ebx;" // lower half - old_val[1]
-    "or %rbx, %rsi;"
-
-    "lock cmpxchgq %rsi, (%rdi);"
-    "ret;"
-);
-
-
-// exeucted by the main pthread
-// main pthread fowards SIGUSR1 to each of the worker pthreads
-void sigalarm_handler(int signum) {
+// in this handler, a worker thread will relay SIGARLM to the main thread
+// the main thread will broadcast SIGUSR1 to each worker threads to start their scheduler
+void sigalrm_handler(int signum) {
     if (pthread_self() != runtime.master) {
         pthread_kill(runtime.master, SIGALRM);
     }
@@ -158,10 +171,9 @@ void scheduler(int signum, siginfo_t *si, void *context) {
     // find a sleeping uthread
     struct uthread_context *p = w->cur->next;
     for (; p != w->cur; p = p->next)
-        if (p->state == USTATE_SLEEPING && p != w->queue.head)
+        if (p->state == USTATE_SLEEPING)
             break;
-    if (p == w->cur && w->cur->state != USTATE_SLEEPING) w->cur = w->queue.head;
-    else w->cur = p;
+    w->cur = p;
 
     w->cur->state = USTATE_RUNNING;
 
@@ -185,32 +197,32 @@ static void* worker_init(void *arg) {
     memset(&sa_alrm, 0, sizeof(sa_alrm));
     memset(&sa_usr1, 0, sizeof(sa_usr1));
     
-    sa_alrm.sa_flags = SA_SIGINFO;
-    sa_alrm.sa_sigaction = scheduler;
-    sigfillset(&sa_alrm.sa_mask);
-    sigaction(SIGUSR1, &sa_alrm, NULL);
-
-    sa_usr1.sa_handler = sigalarm_handler;
+    sa_usr1.sa_flags = SA_SIGINFO;
+    sa_usr1.sa_sigaction = scheduler;
     sigfillset(&sa_usr1.sa_mask);
-    sigaction(SIGALRM, &sa_usr1, NULL);
+    sigaction(SIGUSR1, &sa_usr1, NULL);
+
+    sa_alrm.sa_handler = sigalrm_handler;
+    sigfillset(&sa_alrm.sa_mask);
+    sigaction(SIGALRM, &sa_alrm, NULL);
 
     runtime.init_count++;
 
     struct worker *w = &runtime.workers[get_myid()];
     struct uqueue *q = &w->queue;
-    struct uthread_context *cur = q->head->next;
     while (1) {
+        struct uthread_context *cur = q->head->next;
         while(cur != q->head) {
-            if (cur->state == USTATE_DEAD){
+            if (cur->state == USTATE_JOINED){
                 cur->prev->next = cur->next;
                 cur->next->prev = cur->prev;
-                free(cur);
+                reentrant_free(cur);
+            } else if (cur->state == USTATE_JOINABLE && cur->stack){
+                reentrant_free(cur->stack);
+                cur->stack = 0;
             }
-            if (cur->state == USTATE_ZOMBIE){
-                free(cur->stack);
-            }
+            cur = cur->next;
         }
-        cur = cur->next;
     }
 }
 
@@ -220,7 +232,7 @@ void runtime_init() {
     runtime.is_active = 1;
     runtime.next_uid = 0;
     // start as many cores as workers
-    runtime.worker_count = (uint32_t)1;
+    runtime.worker_count = (int)sysconf(_SC_NPROCESSORS_ONLN);
     runtime.workers = malloc(sizeof(struct worker) * runtime.worker_count);
 
     for (size_t i = 0; i < runtime.worker_count; i++) {
@@ -248,16 +260,16 @@ void runtime_init() {
     struct itimerval timer;
 
     // Configure the timer signal handler
-    sa.sa_handler = sigalarm_handler;
+    sa.sa_handler = sigalrm_handler;
     memset(&sa, 0, sizeof(sa));
     sigfillset(&sa.sa_mask);
     sigaction(SIGALRM, &sa, NULL);
 
     // Configure the timer to fire every 10ms 10000
     timer.it_value.tv_sec = 0;
-    timer.it_value.tv_usec = 1000 * 100;
+    timer.it_value.tv_usec = 1000 * 10;
     timer.it_interval.tv_sec = 0;
-    timer.it_interval.tv_usec = 1000 * 100;
+    timer.it_interval.tv_usec = 1000 * 10;
 
     while (runtime.init_count != runtime.worker_count);
     setitimer(ITIMER_REAL, &timer, NULL);
@@ -271,7 +283,7 @@ static void cleanup() {
     struct uqueue *q = &w->queue;
     struct uthread_context *ucon = w->cur;
     ucon->ret = tmp;
-    ucon->state = USTATE_ZOMBIE;
+    ucon->state = USTATE_JOINABLE;
     // yeild
     pthread_kill(runtime.workers[get_myid()].pthread_id, SIGUSR1);
     for(;;);
@@ -283,10 +295,10 @@ void uthread_create(uthread_t *id, void *(*func)(void *), void *arg) {
     if (!runtime.is_active)
         runtime_init();
 
-    struct uthread_context *ucon = malloc(sizeof(struct uthread_context));
+    struct uthread_context *ucon = reentrant_malloc(sizeof(struct uthread_context));
     memset(ucon, 0, sizeof(struct uthread_context));
     
-    ucon->stack = malloc(UTHREAD_STACK_SIZE);
+    ucon->stack = reentrant_malloc(UTHREAD_STACK_SIZE);
     memset(ucon->stack, 0, UTHREAD_STACK_SIZE);
 
     uint64_t *stack = ucon->stack;
@@ -332,9 +344,9 @@ int uthread_join(uthread_t id, void *ret) {
     struct uthread_context *head = q->head;
     for (struct uthread_context *p = head->next; p != head; p = p->next) {
         if (p->id == u.id) {
-            while (p->state != USTATE_ZOMBIE);
+            while (p->state != USTATE_JOINABLE);
             if (ret) *(uintptr_t *)ret = (uintptr_t)p->ret;
-            p->state = USTATE_DEAD;
+            p->state = USTATE_JOINED;
             q->dead_count++;
             return 0;
         }

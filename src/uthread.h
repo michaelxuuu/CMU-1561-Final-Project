@@ -1,9 +1,9 @@
 #ifndef _uthread_h_
 #define _uthread_h_
 
-#include <stdint.h>
+#define _GNU_SOURCE
 
-typedef uint64_t uthread_t;
+typedef unsigned long int uthread_t;
 
 void uthread_create(uthread_t *id, void *(*func)(void *), void *arg);
 int uthread_join(uthread_t, void *ret);

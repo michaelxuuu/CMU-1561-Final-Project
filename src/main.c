@@ -1,5 +1,6 @@
 
 #include "uthread.h"
+
 #include <stdio.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -16,18 +17,18 @@ void *func2(void *none) {
 }
 
 int main(void) {
-    int s = 500;
+    int s = 500000;
     uthread_t id[s];
     for (int i = 0; i < s; i++) {
         uthread_create(&id[i], func1, 0);
     }
-    printf("here\n");
+    printf("done creation\n");
     for (int i = 0; i < s; i++) {
         void *r;
         if (!uthread_join(id[i], (void *)&r))
             printf("thread %ld exited, value returned: %ld\n", id[i], (uintptr_t)r);
     }
-
+    for (;;);
 }
 
 // struct {
@@ -38,6 +39,6 @@ int main(void) {
 // int main() {
 //     uint32_t old[2] = {0, 0};
 //     uint32_t new[2] = {0, 0};
-//     DCAS((uint64_t)&s, old, new);
+//     DCAS((uint64_t)&s, old, new);e
 //     printf("%d %d\n", s.a, s.b);
 // }
