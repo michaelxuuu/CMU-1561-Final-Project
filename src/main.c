@@ -2,7 +2,6 @@
 #include "uthread.h"
 
 #include <stdio.h>
-#include <stdint.h>
 #include <unistd.h>
 #include <string.h>
 
@@ -17,7 +16,7 @@ void *func2(void *none) {
     return 0;
 }
 
-int fib(int n) {
+long fib(long n) {
    if(n == 0){
       return 0;
    } else if(n == 1) {
@@ -28,20 +27,19 @@ int fib(int n) {
 }
 
 void *func3(void *none) {
-    return (void *)(uintptr_t)fib(30);
+    return (void *)fib(30);
 }
 
 int main(void) {
-    int s = 100;
+    int s = 120000;
     uthread_t id[s];
     for (int i = 0; i < s; i++) {
         uthread_create(&id[i], func3, 0);
     }
-    printf("done creation\n");
     for (int i = 0; i < s; i++) {
         void *r;
         if (!uthread_join(id[i], (void *)&r))
-            printf("thread %ld exited, value returned: %ld\n", id[i], (uintptr_t)r);
+            uprintf("thread %lu exited, value returned: %lu\n", id[i], (long)r);
     }
 }
 

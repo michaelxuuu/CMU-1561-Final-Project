@@ -1,2 +1,0 @@
-process handle SIGUSR1 -s 0
-process handle SIGALRM -s 0

@@ -1,7 +1,7 @@
 #include "uthread.h"
 
-#include <stdint.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdint.h>
 #include <signal.h>
 #include <unistd.h>
@@ -12,63 +12,28 @@
 #include <stdatomic.h>
 #include <sys/ucontext.h>
 
-#define MAX_UTHREAD_COUNT 128
 #define UTHREAD_STACK_SIZE (sizeof(char) * 1024 * 1024 * 8)
 
-void Log(const char *s) {
-    write(STDOUT_FILENO, s, strlen(s));
-}
+// asm.s
+extern long _cas(void *ptr, long oldval, long newval);
 
-extern uint64_t CAS(uint64_t addr, uint64_t old_val, uint64_t new_val);
-extern uint64_t DCAS(uint64_t addr, uint32_t old_val[2], uint32_t new_val[2]);
-
-__asm__ (
-    "CAS:;"
-    "mov %rsi, %rax;"
-    "mov %rdx, %rsi;"
-    "lock cmpxchgq %rsi, (%rdi);"
-    "ret;"
-);
-
-__asm__ (
-    "DCAS:;"
-    
-    "mov 4(%rsi), %eax;" // higher half - old_val[2]
-    "shl $32, %rax;"
-    "mov (%rsi), %ebx;" // lower half - old_val[1]
-    "or %rbx, %rax;"
-
-    "mov 4(%rdx), %esi;" // higher half - new_val[2]
-    "shl $32, %rsi;"
-    "mov (%rdx), %ebx;" // lower half - old_val[1]
-    "or %rbx, %rsi;"
-
-    "lock cmpxchgq %rsi, (%rdi);"
-    "ret;"
-);
-
-int mu = 0;
-
-void lock() {
-    while (CAS((uint64_t)&mu, 0, 1) != 0);
-}
-
-void unlock() {
-    mu = 0;
-}
-
+uthread_mutex_t mu = UTHREAD_MUTEX_INITIALIZER;
 void *reentrant_malloc(size_t size) {
     void *r;
-    lock();
+    uthread_mutex_lock(&mu);
     r = malloc(size);
-    unlock();
+    if (r == 0) {
+        uprintf("error: reentrant_malloc\n");
+        exit(0);
+    }
+    uthread_mutex_unlock(&mu);
     return r;
 }
 
 void reentrant_free(void *p) {
-    lock();
+    uthread_mutex_lock(&mu);
     free(p);
-    unlock();
+    uthread_mutex_unlock(&mu);
 }
 
 enum {
@@ -202,12 +167,14 @@ static void* worker_init(void *id) {
     struct worker *w = &runtime.workers[get_myid()];
     struct uqueue *q = &w->queue;
     while (1) {
-        struct uthread_context *cur = q->head->next;
+        struct uthread_context *cur = q->head->next->next;
         while(cur != q->head) {
             if (cur->state == USTATE_JOINED){
-                cur->prev->next = cur->next;
-                cur->next->prev = cur->prev;
-                reentrant_free(cur);
+                struct uthread_context *tofree = cur;
+                cur = cur->prev;
+                tofree->prev->next = tofree->next;
+                tofree->next->prev = tofree->prev;
+                reentrant_free(tofree);
             } else if (cur->state == USTATE_JOINABLE && cur->stack){
                 reentrant_free(cur->stack);
                 cur->stack = 0;
@@ -323,7 +290,7 @@ void uthread_create(uthread_t *id, void *(*func)(void *), void *arg) {
         old_head = head->next;
         ucon->prev = head;
         ucon->next = old_head;
-    } while (CAS((uint64_t)&head->next, (uint64_t)old_head, (uint64_t)ucon) != (uint64_t)ucon->next);
+    } while (_cas(&head->next, (long)old_head, (long)ucon) != (uint64_t)ucon->next);
     old_head->prev = ucon;
     q->size++;
 

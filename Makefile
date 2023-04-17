@@ -1,5 +1,6 @@
 DIR = src
-SRC = $(wildcard $(DIR)/*.c)
+SRC = $(wildcard $(DIR)/*.c $(DIR)/asm.s)
+OBJ = $(SRC:.c=.o)
 APP = app
 SUFFIX = 2>/dev/null || true
 PREFIX = -@
@@ -11,14 +12,18 @@ CCFLAGS = -g
 .PHONY: clean
 
 gdb: $(APP)
-	$(PREFIX) gdb -x .gdbinit $<
+	gdb -x .gdbinit $<
 
 run: $(APP)
-	$(PREFIX)./$<
+	./$<
 
-$(APP): $(SRC)
-	$(PREFIX)$(CC) $(CCFLAGS) $^ -o $@
+$(APP): $(OBJ)
+	$(CC) $(CCFLAGS) $^ -o $@
+
+$(DIR)/%.o : $(DIR)/%.c
+	$(CC) $(CCFLAGS) $< -c -o $@
 
 clean:
-	$(PREFIX)rm $(APP) $(OUT) $(SUFFIX)
-	$(PREFIX)rm -rf $(APP).dSYM $(SUFFIX)
+	$(PREFIX)	rm $(APP) $(OUT) 	$(SUFFIX)
+	$(PREFIX)	rm -rf $(APP).dSYM 	$(SUFFIX)
+	$(PREFIX)	rm $(DIR)/*.o 		$(SUFFIX)
