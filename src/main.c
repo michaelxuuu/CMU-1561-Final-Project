@@ -4,10 +4,11 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <string.h>
 
 void *func1(void *none) {
-    // char *buf = "hello!\n";
-    // write(STDOUT_FILENO, buf, strlen(buf));
+    char *buf = "hello!\n";
+    write(STDOUT_FILENO, buf, strlen(buf));
     return (void *)100;
 }
 
@@ -16,11 +17,25 @@ void *func2(void *none) {
     return 0;
 }
 
+int fib(int n) {
+   if(n == 0){
+      return 0;
+   } else if(n == 1) {
+      return 1;
+   } else {
+      return (fib(n-1) + fib(n-2));
+   }
+}
+
+void *func3(void *none) {
+    return (void *)(uintptr_t)fib(30);
+}
+
 int main(void) {
     int s = 100;
     uthread_t id[s];
     for (int i = 0; i < s; i++) {
-        uthread_create(&id[i], func1, 0);
+        uthread_create(&id[i], func3, 0);
     }
     printf("done creation\n");
     for (int i = 0; i < s; i++) {
@@ -30,14 +45,3 @@ int main(void) {
     }
 }
 
-// struct {
-//     uint32_t a;
-//     uint32_t b;
-// } s = {0, 0};
-
-// int main() {
-//     uint32_t old[2] = {0, 0};
-//     uint32_t new[2] = {0, 0};
-//     DCAS((uint64_t)&s, old, new);e
-//     printf("%d %d\n", s.a, s.b);
-// }
