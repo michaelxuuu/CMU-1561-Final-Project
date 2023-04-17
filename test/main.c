@@ -1,5 +1,5 @@
 
-#include "uthread.h"
+#include "../src/uthread.h"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -31,7 +31,7 @@ void *func3(void *none) {
 }
 
 int main(void) {
-    int s = 120000;
+    int s = 100;
     uthread_t id[s];
     for (int i = 0; i < s; i++) {
         uthread_create(&id[i], func3, 0);

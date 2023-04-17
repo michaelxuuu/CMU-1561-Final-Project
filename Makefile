@@ -1,15 +1,12 @@
-DIR = src
-SRC = $(wildcard $(DIR)/*.c $(DIR)/asm.s)
-OBJ = $(SRC:.c=.o)
-APP = app
-SUFFIX = 2>/dev/null || true
-PREFIX = -@
-OUT = out
-INIT = .gdbinit
+SRC1 = $(wildcard **/*.c)
+SRC2 = $(wildcard **/*.s)
+OBJ = $(SRC1:%.c=%.o) $(SRC2:%.s=%.o)
 CC = clang
 CCFLAGS = -g
 
-.PHONY: clean
+APP = app
+PREFIX = -@
+SUFFIX = 2>/dev/null || true
 
 gdb: $(APP)
 	gdb -x .gdbinit $<
@@ -20,10 +17,9 @@ run: $(APP)
 $(APP): $(OBJ)
 	$(CC) $(CCFLAGS) $^ -o $@
 
-$(DIR)/%.o : $(DIR)/%.c
+**/%.o : **/%.c
 	$(CC) $(CCFLAGS) $< -c -o $@
 
 clean:
-	$(PREFIX)	rm $(APP) $(OUT) 	$(SUFFIX)
-	$(PREFIX)	rm -rf $(APP).dSYM 	$(SUFFIX)
-	$(PREFIX)	rm $(DIR)/*.o 		$(SUFFIX)
+	$(PREFIX) rm $(APP) $(OBJ)   $(SUFFIX)
+	$(PREFIX) rm -rf $(APP).dSYM $(SUFFIX)
