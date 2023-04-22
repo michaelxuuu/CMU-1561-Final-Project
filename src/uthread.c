@@ -15,26 +15,11 @@
 #define UTHREAD_STACK_SIZE (sizeof(char) * 1024 * 1024 * 8)
 
 // asm.s
-extern long _cas(void *ptr, long oldval, long newval);
+extern long _cas32(void *ptr, int oldval, int newval);
+extern long _cas64(void *ptr, long oldval, long newval);
+extern int _dcas64(void *ptr, long oldval[2], long newval[2], long actual[2]);
 
-uthread_mutex_t mu = UTHREAD_MUTEX_INITIALIZER;
-void *reentrant_malloc(size_t size) {
-    void *r;
-    uthread_mutex_lock(&mu);
-    r = malloc(size);
-    if (r == 0) {
-        uprintf("error: reentrant_malloc\n");
-        exit(0);
-    }
-    uthread_mutex_unlock(&mu);
-    return r;
-}
-
-void reentrant_free(void *p) {
-    uthread_mutex_lock(&mu);
-    free(p);
-    uthread_mutex_unlock(&mu);
-}
+#define align16(x) ((x + 15UL) & ~15UL)
 
 enum {
     USTATE_RUNNING,
@@ -51,12 +36,13 @@ struct uthread {
 // uthread context
 struct uthread_context {
     int id;
-    int state;
-    ucontext_t uc;
+    short state;
+    short marker;
+    struct uthread_context *next;
+    struct uthread_context *prev;
     void *stack;
     void *ret;
-    struct uthread_context *prev;
-    struct uthread_context *next;
+    ucontext_t uc;
 };
 
 // a circular queue of uthread contexts
@@ -174,9 +160,9 @@ static void* worker_init(void *id) {
                 cur = cur->prev;
                 tofree->prev->next = tofree->next;
                 tofree->next->prev = tofree->prev;
-                reentrant_free(tofree);
+                free(tofree);
             } else if (cur->state == USTATE_JOINABLE && cur->stack){
-                reentrant_free(cur->stack);
+                free(cur->stack);
                 cur->stack = 0;
             }
             cur = cur->next;
@@ -198,7 +184,7 @@ void runtime_init() {
         struct uqueue *q = &w->queue;
         // create dummy context for the worker to exeucte when idle
         // so that it does not have to be blocked in signal handler
-        struct uthread_context *ucon = malloc(sizeof(struct uthread_context));
+        struct uthread_context *ucon = malloc(align16(sizeof(struct uthread_context)));
         memset(ucon, 0, sizeof(struct uthread_context));
 
         ucon->state = USTATE_RUNNING;
@@ -254,10 +240,10 @@ void uthread_create(uthread_t *id, void *(*func)(void *), void *arg) {
     if (!runtime.is_active)
         runtime_init();
 
-    struct uthread_context *ucon = reentrant_malloc(sizeof(struct uthread_context));
+    struct uthread_context *ucon = malloc(align16(sizeof(struct uthread_context)));
     memset(ucon, 0, sizeof(struct uthread_context));
     
-    ucon->stack = reentrant_malloc(UTHREAD_STACK_SIZE);
+    ucon->stack = malloc(UTHREAD_STACK_SIZE);
     memset(ucon->stack, 0, UTHREAD_STACK_SIZE);
 
     void *stack = ucon->stack;
@@ -279,18 +265,18 @@ void uthread_create(uthread_t *id, void *(*func)(void *), void *arg) {
     
     ucon->id = runtime.next_uid++;
     ucon->state = USTATE_SLEEPING;
+    ucon->marker = 0;
 
     struct worker *w = pick_worker();
     struct uqueue *q = &w->queue;
     struct uthread_context *head = q->head;
-
 
     struct uthread_context *old_head;
     do {
         old_head = head->next;
         ucon->prev = head;
         ucon->next = old_head;
-    } while (_cas(&head->next, (long)old_head, (long)ucon) != (uint64_t)ucon->next);
+    } while (_cas64(&head->next, (long)old_head, (long)ucon) != (uint64_t)ucon->next);
     old_head->prev = ucon;
     q->size++;
 
@@ -311,4 +297,8 @@ int uthread_join(uthread_t id, void *ret) {
         }
     }
     return -1;
+}
+
+int uthread_detach(uthread_t id) {
+    
 }

@@ -19,4 +19,10 @@ void uthread_mutex_unlock(uthread_mutex_t *mu);
 // uprintf.c
 void uprintf(const char *fmt, ...);
 
+// umalloc.c
+#ifndef _UMALLOC_
+#define malloc(x) reentrant_malloc(x)
+#define free(x) reentrant_free(x)
+#endif
+
 #endif

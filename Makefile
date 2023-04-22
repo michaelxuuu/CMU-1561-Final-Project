@@ -17,7 +17,7 @@ run: $(APP)
 $(APP): $(OBJ)
 	$(CC) $(CCFLAGS) $^ -o $@
 
-**/%.o : **/%.c
+%.o : %.c
 	$(CC) $(CCFLAGS) $< -c -o $@
 
 clean:
