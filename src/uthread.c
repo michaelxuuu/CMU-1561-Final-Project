@@ -15,7 +15,7 @@
 #define UTHREAD_STACK_SIZE (sizeof(char) * 1024 * 1024 * 8)
 
 // asm.s
-extern long _cas32(void *ptr, int oldval, int newval);
+extern int _cas32(void *ptr, int oldval, int newval);
 extern long _cas64(void *ptr, long oldval, long newval);
 extern int _dcas64(void *ptr, long oldval[2], long newval[2], long actual[2]);
 
@@ -246,9 +246,8 @@ void uthread_create(uthread_t *id, void *(*func)(void *), void *arg) {
     ucon->stack = malloc(UTHREAD_STACK_SIZE);
     memset(ucon->stack, 0, UTHREAD_STACK_SIZE);
 
-    void *stack = ucon->stack;
-    stack = (void *)((uintptr_t)stack + UTHREAD_STACK_SIZE);
-    *(uintptr_t *)(--stack) = (uintptr_t)cleanup;
+    void *rsp = (void *)(((uintptr_t)ucon->stack + UTHREAD_STACK_SIZE & ~0xFL) - 8);
+    *(uintptr_t *)rsp = (uintptr_t)cleanup;
 
 
     uint64_t cs, ss;
@@ -258,7 +257,7 @@ void uthread_create(uthread_t *id, void *(*func)(void *), void *arg) {
         :"=r"(cs), "=r"(ss)
     );
 
-    ucon->uc.uc_mcontext.gregs[REG_RSP] = (greg_t)stack;
+    ucon->uc.uc_mcontext.gregs[REG_RSP] = (greg_t)rsp;
     ucon->uc.uc_mcontext.gregs[REG_RDI] = (greg_t)arg;
     ucon->uc.uc_mcontext.gregs[REG_RIP] = (greg_t)func;
     ucon->uc.uc_mcontext.gregs[REG_CSGSFS] = cs | (ss << 48);

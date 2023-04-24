@@ -3,7 +3,7 @@
 #include "uthread.h"
 
 // asm.s
-extern long _cas32(void *ptr, int oldval, int newval);
+extern int _cas32(void *ptr, int oldval, int newval);
 
 void uthread_mutex_init(uthread_mutex_t *m) {
     m->locked = 0;

@@ -3,6 +3,8 @@
 
 #define _GNU_SOURCE
 
+#include <stdlib.h>
+
 typedef unsigned long int uthread_t;
 void uthread_create(uthread_t *id, void *(*func)(void *), void *arg);
 int uthread_join(uthread_t, void *ret);
@@ -20,6 +22,8 @@ void uthread_mutex_unlock(uthread_mutex_t *mu);
 void uprintf(const char *fmt, ...);
 
 // umalloc.c
+void *reentrant_malloc(size_t size);
+void reentrant_free(void *ptr);
 #ifndef _UMALLOC_
 #define malloc(x) reentrant_malloc(x)
 #define free(x) reentrant_free(x)

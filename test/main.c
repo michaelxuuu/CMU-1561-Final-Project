@@ -22,6 +22,7 @@ long fib(long n) {
    } else if(n == 1) {
       return 1;
    } else {
+	free(malloc(10));
       return (fib(n-1) + fib(n-2));
    }
 }
