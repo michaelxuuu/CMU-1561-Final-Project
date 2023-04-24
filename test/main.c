@@ -22,7 +22,7 @@ long fib(long n) {
    } else if(n == 1) {
       return 1;
    } else {
-	free(malloc(10));
+	// free(malloc(10));
       return (fib(n-1) + fib(n-2));
    }
 }
@@ -32,7 +32,7 @@ void *func3(void *none) {
 }
 
 int main(void) {
-    int s = 100;
+    int s = 100000;
     uthread_t id[s];
     for (int i = 0; i < s; i++) {
         uthread_create(&id[i], func3, 0);
