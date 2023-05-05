@@ -3,17 +3,16 @@
 
 #define _GNU_SOURCE
 
-#include <stdlib.h>
+#include <stdint.h>
 
-typedef unsigned long int uthread_t;
+typedef uint64_t uthread_t;
 void uthread_create(uthread_t *id, void *(*func)(void *), void *arg);
-int uthread_join(uthread_t, void *ret);
+int uthread_join(uthread_t, void **ret);
+int uthread_detach(uthread_t id);
 
 // sync.c
 #define UTHREAD_MUTEX_INITIALIZER {0}
-typedef struct {
-    int locked;
-} uthread_mutex_t;
+typedef struct { uint64_t locked; } uthread_mutex_t;
 void uthread_mutex_init(uthread_mutex_t *mu);
 void uthread_mutex_lock(uthread_mutex_t *mu);
 void uthread_mutex_unlock(uthread_mutex_t *mu);
@@ -22,11 +21,7 @@ void uthread_mutex_unlock(uthread_mutex_t *mu);
 void uprintf(const char *fmt, ...);
 
 // umalloc.c
-void *reentrant_malloc(size_t size);
-void reentrant_free(void *ptr);
-#ifndef _UMALLOC_
-#define malloc(x) reentrant_malloc(x)
-#define free(x) reentrant_free(x)
-#endif
+void *umalloc(uint64_t size);
+void ufree(void *ptr);
 
 #endif

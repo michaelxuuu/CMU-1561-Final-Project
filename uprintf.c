@@ -1,6 +1,9 @@
-#include <stdio.h>
+#include "uthread.h"
+
 #include <unistd.h>
 #include <stdarg.h>
+
+static uthread_mutex_t mu = UTHREAD_MUTEX_INITIALIZER;
 
 void uputc(char c) {
     write(STDOUT_FILENO, &c, 1);
@@ -59,6 +62,9 @@ void printptr(unsigned long x) {
 void uprintf(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
+
+    uthread_mutex_lock(&mu);
+
     for (int i = 0; fmt[i]; i++) {
         if (fmt[i] == '%') {
             char c = fmt[++i];
@@ -76,5 +82,8 @@ void uprintf(const char *fmt, ...) {
         }
         else uputc(fmt[i]);
     }
+
+    uthread_mutex_unlock(&mu);
+    
     va_end(ap);
 }
