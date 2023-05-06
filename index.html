@@ -7,7 +7,7 @@
 </head>
 <body>
     <div class="container">
-        <h1 class="title">Towards Efficient User-level Preemptive Multitasking</h1>
+        <h1 class="title">A User-level Thread Library Featuring Preemptive Scheduling</h1>
         <p class="author">Yao Xu, Michael Xu</p>
         <p class="date">March 2023</p>
 
@@ -17,7 +17,7 @@
 
         <section class="section">
           <h2>Reports</h2>
-          <p>For Milestone and Final report, please see two pdf files on this web page.</p>
+          <p>For Milestone and Final report, please see two embeded pdfs at the bottom of this page.</p>
       </section> 
 
         <section class="section">
@@ -28,7 +28,7 @@
 
         <section class="section">
             <h2>Summary</h2>
-            <p>We are going to implement a user-level thread library that uses hybrid threading model and work stealing.</p>
+            <p>We implemented a user-level thread library that uses hybrid threading model and features preemptive scheduling.</p>
         </section> 
         
         <section class="section">
@@ -43,57 +43,11 @@
 
             <p>Many programming languages have incorporated support for user-level threads, and we believe it is worth the effort to reinvent the wheel in order to better understand important concepts discussed in lectures, such as lock implementations, work stealing, and lock-free programming. Therefore, we have decided to implement our own user-level thread library.</p>
         </section>
-        
-        <section class="section">
-            <h2>The challenge</h2>
-            <p>There are several challenging parts in this project. The first and also the most important one is how to implement user-level threads correctly - what are considered as part of the context of a task, how to assign memory to each task, and how to schedule tasks in a preemptive manner.
-            <p>Work stealing can also be tricky to implement efficiently. There are so many design choices that go into this, such as from whom should each worker thread steal, and should the queues be implemented lock-free or not, etc.</p>
-            <p>The implementation of locks can also be challenging since there are many ways to implement locks, and deciding which one is best for our circumstance is crucial.</p>
-            <p>Another challenging part is to implement resource management such as memory to avoid resource leaking.</p>
-        </section>
-
-        <section class="section">
-            <h2>Goals & Deliverables</h2>
-            <p>We aim to develop a user-level thread library that is fully functional and almost able to be identically used as the Pthread library, with a focus on implementing work stealing. Additionally, we have set several goals that we hope to achieve, such as creating our lock implementation and implementing lock-free work queues. For the demo, our plan is to benchmark both the pthread library and our library and compare their performance results. If we successfully implement our own locks and lock-free work queues, we can further benchmark each implementations to scrutinize the performance variation.</p>
-        </section>
-
 
         <section class="section">
             <h2>Platform</h2>
-            <p>Any machine with a POSIX-compliant OS and a multi-core x86-64 processor.</p>
+            <p>Any machine with a Linux OS and a multi-core x86-64 processor.</p>
         </section>
-
-        <section class="section">
-          <h2>Schedule</h2>
-          <table>
-              <tr>
-                <th>Date</th>
-                <th>Task</th>
-              </tr>
-              <tr>
-                <td>4/1/2023 - 4/6/2023</td>
-                <td>Study related work thoroughly and decide API exposed to users</td>
-              </tr>
-              <tr>
-                <td>4/7/2023 - 4/14/2023</td>
-                <td>Implement all APIs with distributed work queue</td>
-              </tr>
-              <tr>
-                <td>4/15/2023 - 4/21/2023</td>
-                <td>Implement work stealing among workers and write milestone report</td>
-              </tr>
-              <tr>
-                <td>4/22/2023 - 4/28/2023</td>
-                <td>Write benchmark programs and conduct performance analysis</td>
-              </tr>
-              <tr>
-                <td>4/29/2023 - 5/3/2023</td>
-                <td>Write final report and prepare poster</td>
-              </tr>
-            </table>
-            
-      </section>
-
 
         <h2>Milestone Report</h2>
         <iframe src="Milestone_Report.pdf" width="100%" height="500px">
