@@ -41,7 +41,7 @@
             
             <p>Clearly, the thread pool model should not be preserved. But how to break the exeuction of long-running blocking tasks without compromising correctness to allow other tasks to run has become the main question. To answer that question, we must introduce the idea of user-level threads, where we turn each unit of work in the work queue (remeber that we are still sticking to the thread pool model) into an execution context, keeping track of the full state of each concurrently running task, and instead of mapping one task to one dedicated POXIS thread, we dynamically decide which POSIX thread in the pool should exeucte which task, so that we can safely break the exeuction of one task, saving its context back to the shared queue, and start the execution of the next user-level thread, loading the corresponding context from the queue. This process is depicted in the <a href="#figure1">figure</a> at the beginning.</p>
 
-            <p>Many programming languages have incorporated support for user-level threads, and we believe it is worth the effort to reinvent the wheel in order to better understand important concepts discussed in lectures, such as lock implementations, work stealing, and lock-free programming. Therefore, we have decided to implement our own user-level thread library.</p>
+            <p>Many programming languages have incorporated support for user-level threads, and we believe it is worth the effort to reinvent the wheel in order to better understand important concepts discussed in lectures, such as lock implementations and lock-free programming. Therefore, we have decided to implement our own user-level thread library.</p>
         </section>
 
         <section class="section">
