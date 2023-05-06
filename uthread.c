@@ -13,6 +13,7 @@
 #include <sys/ucontext.h>
 
 #define ALIGN16(x) ((uint64_t)(x) & ~0xFL) // round down to a multiple of 16
+#define ALIGN4K(x) ((uint64_t)(x) + 4095 & ~0xFFFL)
 #define UTHREAD_STACK_SIZE (1024 * 1024 * 8)
 #define ALTSTACK_SIZE (4096)
 
@@ -20,9 +21,6 @@
 extern uint64_t _cas(void *ptr, uint64_t oldval, uint64_t newval);
 extern uint16_t _ss();
 extern uint16_t _cs();
-
-// umalloc.c
-extern void *_umalloc(uint64_t size);
 
 extern void _cleanup();
 
@@ -46,6 +44,7 @@ struct uthread {
 static __thread int worker_id; // local to each pthread (worker)
 struct worker {
     int id;
+    int tid;              // kernel-assigned threaed id
     pthread_t pthread_id; // the pthread that the worker maps to
     struct uthread *head; // work queue
     struct uthread *cur;  // current uthread in execution
@@ -53,6 +52,7 @@ struct worker {
 };
 
 static struct {
+    int pid;
     pthread_t master;
     int worker_count;
     atomic_uint started;
@@ -106,6 +106,7 @@ void *dummy(void *id) {
     worker_id = (uint64_t)id;
 
     struct worker *w = &runtime.workers[worker_id];
+    w->tid = gettid();
 
     // use alt stack for signal handling
     stack_t altstack;
@@ -124,7 +125,9 @@ void *dummy(void *id) {
                 // and then deallcoate the memory
                 struct uthread *tofree = p->next;
                 p->next = p->next->next; // make the uthread unreachable
-                ufree(tofree);
+                if (munmap(tofree, ALIGN4K(sizeof(struct uthread)))) {
+                    exit(1);
+                }
             }
         }
 }
@@ -132,14 +135,15 @@ void *dummy(void *id) {
 void runtime_start() {
     runtime.master = pthread_self();
     runtime.started = 1;
+    runtime.pid = getpid();
 
     // get core count
-    // runtime.worker_count = sysconf(_SC_NPROCESSORS_ONLN);
-    runtime.worker_count = atoi(getenv("WORKERCT"));
+    runtime.worker_count = sysconf(_SC_NPROCESSORS_ONLN);
+    // runtime.worker_count = atoi(getenv("WORKERCT"));
 
     // start as many works as cores
     // allocate memory for workers
-    runtime.workers = _umalloc(sizeof(struct worker) * runtime.worker_count);
+    runtime.workers = mmap(NULL, ALIGN4K(sizeof(struct worker) * runtime.worker_count), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
     // initialize workers
     for (int id = 0 ; id < runtime.worker_count; id++) {
         struct worker *w = &runtime.workers[id];
@@ -147,7 +151,7 @@ void runtime_start() {
         w->id = id;
         // initialize the work queue
         // create a dummy uthread that will stay as the head of the work queue
-        w->head = _umalloc(sizeof(struct uthread));
+        w->head = mmap(NULL, ALIGN4K(sizeof(struct uthread)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
         // initialize the dummy uthread
         // this dummny uthread does not have an id and will never be exposed to the user
         w->head->next = w->head; // circular queue
@@ -196,35 +200,48 @@ __asm__ (
     "mov 0(%rsp), %r12;"  // &retptr
     "mov 8(%rsp), %r13;"  // &stack
     "mov 16(%rsp), %r14;" // &state
+    "mov 24(%rsp), %r15;" // &pthread_id
+    "mov 32(%rsp), %rbx;" // pid
     "mov %rax, (%r12);"   // retptr = rax
     "mov (%r13), %rdi;"   // munmap param 1 (addr)
     "mov $(1024 * 1024 * 8), %rsi;" // munmap param 2 (len)
-    "mov $0xb, %rax;"     // munmap syscall num is 11
+    "mov $11, %rax;"       // munmap syscall num is 11
     "syscall;"
     "movl $0x0, (%r13);"  // stack = 0
     "movl $0x2, (%r14);"  // state = 2 (JOINABLE)
+    "mov %rbx, %rdi;"     // pid
+    "mov %r15, %rsi;"     // tid
+    "mov $10, %rdx;"      // SIGUSR1 (10)
+    "mov $234, %rax;"     // tgkill syscall (234)
+    "syscall;"
     "jmp .;"
 );
 
 void uthread_create(uthread_t *id, void *(*func)(void *), void *arg) {
-
     if (!runtime.started)
         runtime_start();
 
-    struct uthread *u = _umalloc(sizeof(struct uthread));
-    memset(&u->ucon, 0, sizeof(ucontext_t));
+    struct uthread *u;
+    while (MAP_FAILED == (u = mmap(NULL, ALIGN4K(sizeof(struct uthread)), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0)));
+
     // assign id
     u->id = runtime.next_uid++;
+
+    // pick a worker and insert the uthread into ist work queue
+    struct worker *w = &runtime.workers[runtime.next_worker++ % runtime.worker_count];
 
     // allcoate stack on heap
     while (MAP_FAILED == (u->stack = mmap(NULL, UTHREAD_STACK_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0)));
     // initailze the stack
     uint64_t *rsp = (uint64_t *)(ALIGN16(u->stack + UTHREAD_STACK_SIZE) - 8); // make rsp 8 byte aligned but not 16 byte aligned
-    // prepare the return address
+    // prep stack
+    *(--rsp) = (uint64_t)runtime.pid;
+    *(--rsp) = (uint64_t)w->tid;
     *(--rsp) = (uint64_t)&u->state;
     *(--rsp) = (uint64_t)&u->stack;
     *(--rsp) = (uint64_t)&u->retptr;
     *(--rsp) = (uint64_t)_cleanup;
+
     // initialize the execution context
     u->ucon.uc_mcontext.gregs[REG_RSP] = (greg_t)rsp;
     u->ucon.uc_mcontext.gregs[REG_RDI] = (greg_t)arg;
@@ -232,6 +249,8 @@ void uthread_create(uthread_t *id, void *(*func)(void *), void *arg) {
     u->ucon.uc_mcontext.gregs[REG_CSGSFS] = _cs() | ((uint64_t)_ss() << 48);
     u->ucon.uc_stack.ss_size = ALTSTACK_SIZE;
     u->ucon.uc_stack.ss_flags = SS_ONSTACK;
+    // install alt stack that will be used by the signal handler
+    u->ucon.uc_stack.ss_sp = w->altstack;
 
     // initialize the state
     u->state = USTATE_SLEEPING;
@@ -239,10 +258,6 @@ void uthread_create(uthread_t *id, void *(*func)(void *), void *arg) {
     // not detached initially
     u->detached = 0;
 
-    // pick a worker and insert the uthread into ist work queue
-    struct worker *w = &runtime.workers[runtime.next_worker++ % runtime.worker_count];
-    // install alt stack that will be used by the signal handler
-    u->ucon.uc_stack.ss_sp = w->altstack;
     struct uthread *head = w->head;
     // add to the work queue (always add after the head)
     struct uthread *old_next;

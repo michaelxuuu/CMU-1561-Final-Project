@@ -6,10 +6,9 @@ import time
 SERVER_ADDRESS = ('128.2.100.189', 8888)
 
 # set up the number of requests to send
-NUM_REQUESTS = 10000
+NUM_REQUESTS = 100000
 
-# set up the message to send
-MESSAGE = b'Hello, world!\n'
+DATA_LEN = 1024 * 1024
 
 # define a function to send a request to the server
 def send_request():
@@ -20,10 +19,27 @@ def send_request():
     client_socket.connect(SERVER_ADDRESS)
 
     # send the message to the server
-    client_socket.sendall(MESSAGE)
+    DATA = "1" * DATA_LEN
+    client_socket.send(DATA.encode())
+    client_socket.send(str('\n').encode())
+
+    response = b''
+    expected_bytes = DATA_LEN
 
     # receive the response from the server
-    response = client_socket.recv(1024)
+    while len(response) < expected_bytes:
+        chunk = client_socket.recv(expected_bytes - len(response))
+        if not chunk:
+            # Handle case where server closed connection prematurely
+            break
+        response += chunk
+
+    # Do something with the response
+    # print(response.decode())
+
+
+    # print(len(response))
+
 
     # close the socket
     client_socket.close()

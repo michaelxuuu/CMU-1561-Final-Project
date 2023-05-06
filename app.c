@@ -43,7 +43,6 @@ long fib(long n) {
    } else if(n == 1) {
       return 1;
    } else {
-	// free(malloc(10));
       return (fib(n-1) + fib(n-2));
    }
 }
@@ -52,23 +51,10 @@ void *func3(void *none) {
     return (void *)fib(30);
 }
 
-// int main(void) {
-//     int n = atoi(getenv("UTHREADCT"));
-//     uthread_t id[n];
-//     for (int i = 0; i < n; i++) {
-//         uthread_create(&id[i], func3, 0);
-//     }
-//     for (int i = 0; i < n; i++) {
-//         void *r;
-//         if (!uthread_join(id[i], (void *)&r));
-//             // uprintf("thread %lu exited, value returned: %lu\n", id[i], (long)r);
-//     }
-// }
-
 int make_listen_sock(uint16_t port) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0)
-        uprintf("socket(2): error: "), syscall(SYS_exit, 1);
+        uprintf("socket(2): error: "), exit(1);
 
     /* By having the sin_addr field of sockaddr_in
        to be all 0's, the ip address is effectively
@@ -97,26 +83,25 @@ int make_listen_sock(uint16_t port) {
        automatically, without passing in the address but the socket, which
        address should it be listening to */
     if (bind(sock, (sockaddr *)&myaddr, sizeof(myaddr)))
-        uprintf("err: bind(2)\n"), syscall(SYS_exit, 1);
+        uprintf("err: bind(2)\n"), exit(1);
 
     /* set the socket as passive */
     if (listen(sock, 1024) < 0)
-        uprintf("err: listen(2)\n"), syscall(SYS_exit, 1);
+        uprintf("err: listen(2)\n"), exit(1);
 
     return sock;
 }
 
 void *do_conn(void *connfd) {
+    int conn = (uint64_t)connfd;
     char buf[1024];
     for (;;) {
-        int n = read((int)connfd, &buf, 1024);
+        int n = read(conn, &buf, 1024);
         if (n == 0) break;
-        write((int)connfd, buf, n);
+        write(conn, buf, n);
     }
     return 0;
 }
-
-void check_heap(int flag);
 
 int main() {
     int lnfd = make_listen_sock(8888);
@@ -127,17 +112,23 @@ int main() {
         sockaddr_in conn;
         socklen_t connlen = sizeof(conn);
         int connfd = accept(lnfd, (sockaddr *)&conn, &connlen);
-        if (connfd == -1) 
-            uprintf("err: accept(2)\n"), syscall(SYS_exit, 1);
+        if (connfd == -1)
+            uprintf("err: accept(2)\n"), exit(1);
         uprintf("accpeted conn %d\n", ct);
-        uthread_create(&ids[0], do_conn, (void *)connfd);
+        uthread_create(&ids[0], do_conn, (void *)(uint64_t)connfd);
         uthread_detach(ids[0]);
     }
-
-    // for (int ct = 0; ct < 1; ct++)
-    //     uthread_join(ids[ct], 0);
-
-    // uthread_finalize();
-
-    // check_heap(1);
 }
+
+// int main(void) {
+//     int n = atoi(getenv("UTHREADCT"));
+//     uthread_t id[n];
+//     for (int i = 0; i < n; i++) {
+//         uthread_create(&id[i], func3, 0);
+//     }
+//     for (int i = 0; i < n; i++) {
+//         void *r;
+//         if (!uthread_join(id[i], (void *)&r));
+//             // uprintf("thread %lu exited, value returned: %lu\n", id[i], (long)r);
+//     }
+// }
